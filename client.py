@@ -12,7 +12,7 @@ def receive_messages(client_socket):
             data = client_socket.recv(BUFFER_SIZE)
 
             if not data:
-                print("\nاتصال با سرور قطع شد.")
+                print("\nConnection closed by server.")
                 break
 
             message = data.decode("utf-8")
@@ -26,6 +26,10 @@ def receive_messages(client_socket):
 def main():
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     client_socket.connect((SERVER_HOST, SERVER_PORT))
+
+    first_message = client_socket.recv(BUFFER_SIZE).decode("utf-8")
+    username = input(first_message)
+    client_socket.sendall(username.encode("utf-8"))
 
     receive_thread = threading.Thread(
         target=receive_messages,
@@ -45,7 +49,7 @@ def main():
             client_socket.sendall(message.encode("utf-8"))
 
     except OSError:
-        print("خطا در ارتباط با سرور.")
+        print("Connection error.")
 
     finally:
         client_socket.close()

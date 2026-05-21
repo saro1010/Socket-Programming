@@ -1,17 +1,22 @@
 import socket
 import threading
+from datetime import datetime
 
 HOST = "0.0.0.0"
 PORT = 5050
 BUFFER_SIZE = 4096
 
-clients = []
+clients = {}
 clients_lock = threading.Lock()
+
+
+def get_time():
+    return datetime.now().strftime("%H:%M")
 
 
 def broadcast(message, sender_socket=None):
     with clients_lock:
-        all_clients = clients.copy()
+        all_clients = list(clients.keys())
 
     for client_socket in all_clients:
         if client_socket == sender_socket:
@@ -26,7 +31,7 @@ def broadcast(message, sender_socket=None):
 def remove_client(client_socket):
     with clients_lock:
         if client_socket in clients:
-            clients.remove(client_socket)
+            del clients[client_socket]
 
     try:
         client_socket.close()
@@ -34,14 +39,41 @@ def remove_client(client_socket):
         pass
 
 
+def send_users_list(client_socket):
+    with clients_lock:
+        users = list(clients.values())
+
+    if not users:
+        message = "No users connected."
+    else:
+        message = "Connected users:\n"
+        for user in users:
+            message += f"- {user['username']} ({user['ip']})\n"
+
+    client_socket.sendall(message.encode("utf-8"))
+
+
 def handle_client(client_socket, address):
     ip, port = address
     print(f"[CONNECT] Client connected from {ip}:{port}")
 
-    with clients_lock:
-        clients.append(client_socket)
-
     try:
+        client_socket.sendall("Enter your username: ".encode("utf-8"))
+        username = client_socket.recv(BUFFER_SIZE).decode("utf-8").strip()
+
+        if username == "":
+            username = ip
+
+        with clients_lock:
+            clients[client_socket] = {
+                "username": username,
+                "ip": ip
+            }
+
+        join_message = f"[{get_time()}] {username} joined the chat."
+        print(join_message)
+        broadcast(join_message, sender_socket=client_socket)
+
         while True:
             data = client_socket.recv(BUFFER_SIZE)
 
@@ -53,15 +85,27 @@ def handle_client(client_socket, address):
             if message == "/exit":
                 break
 
-            final_message = f"{ip}: {message}"
+            if message == "/users":
+                send_users_list(client_socket)
+                continue
+
+            final_message = f"[{get_time()}] {username} ({ip}): {message}"
             print(final_message)
 
             broadcast(final_message, sender_socket=client_socket)
 
     except OSError:
         pass
+
     finally:
-        print(f"[DISCONNECT] Client disconnected from {ip}:{port}")
+        with clients_lock:
+            user = clients.get(client_socket)
+
+        if user:
+            leave_message = f"[{get_time()}] {user['username']} left the chat."
+            print(leave_message)
+            broadcast(leave_message, sender_socket=client_socket)
+
         remove_client(client_socket)
 
 
@@ -88,6 +132,7 @@ def start_server():
 
     except KeyboardInterrupt:
         print("\n[STOPPED] Server stopped.")
+
     finally:
         server_socket.close()
 
