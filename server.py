@@ -53,6 +53,39 @@ def send_users_list(client_socket):
     client_socket.sendall(message.encode("utf-8"))
 
 
+def find_client(target):
+    with clients_lock:
+        for client_socket, user in clients.items():
+            if user["username"] == target or user["ip"] == target:
+                return client_socket, user
+
+    return None, None
+
+
+def send_private_message(sender_socket, sender_username, sender_ip, command):
+    parts = command.split(" ", 2)
+
+    if len(parts) < 3:
+        sender_socket.sendall(
+            "Wrong command. Use: /pm username message".encode("utf-8")
+        )
+        return
+
+    target = parts[1]
+    private_message = parts[2]
+
+    target_socket, target_user = find_client(target)
+
+    if target_socket is None:
+        sender_socket.sendall("User not found.".encode("utf-8"))
+        return
+
+    message_to_target = f"[{get_time()}] Private from {sender_username} ({sender_ip}): {private_message}"
+    target_socket.sendall(message_to_target.encode("utf-8"))
+
+    sender_socket.sendall("Private message sent.".encode("utf-8"))
+
+
 def handle_client(client_socket, address):
     ip, port = address
     print(f"[CONNECT] Client connected from {ip}:{port}")
@@ -87,6 +120,10 @@ def handle_client(client_socket, address):
 
             if message == "/users":
                 send_users_list(client_socket)
+                continue
+
+            if message.startswith("/pm "):
+                send_private_message(client_socket, username, ip, message)
                 continue
 
             final_message = f"[{get_time()}] {username} ({ip}): {message}"
